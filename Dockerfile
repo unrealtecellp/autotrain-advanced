@@ -35,6 +35,7 @@ RUN apt-get update &&  \
     libjpeg-dev \
     libpng-dev \
     libgomp1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
