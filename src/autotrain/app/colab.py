@@ -43,7 +43,7 @@ def colab_app():
         "ST Triplet",
         "ST Question Answering",
         "Automatic Speech Recognition",
-        "asr"
+        "speech_separation",
     ]
 
     TASK_MAP = {
@@ -66,8 +66,8 @@ def colab_app():
         "ST Pair Scoring": "st:pair_score",
         "ST Triplet": "st:triplet",
         "ST Question Answering": "st:qa",
-        "asr": "asr",
-        # "Automatic Speech Recognition": "asr",
+        "Automatic Speech Recognition": "ASR",
+        "speech_separation": "speech_separation",
     }
 
     def _get_params(task, param_type):
@@ -302,8 +302,8 @@ def colab_app():
             col_mapping.value = '{"sentence1": "query", "sentence1": "answer"}'
             dataset_source_dropdown.disabled = False
             valid_split.disabled = False
-        elif task == "asr":
-            col_mapping.value = '{"audio": "path", "text": "sentence"}'
+        elif task == "ASR":
+            col_mapping.value = '{"audio": "audio", "transcription": "transcription"}'
             dataset_source_dropdown.disabled = False
             valid_split.disabled = False
         else:
@@ -330,8 +330,8 @@ def colab_app():
             base_model.value = MODEL_CHOICES["image-object-detection"][0]
         elif TASK_MAP[task_dropdown.value].startswith("st:"):
             base_model.value = MODEL_CHOICES["sentence-transformers"][0]
-        elif TASK_MAP[task_dropdown.value] == "asr":
-            base_model.value = MODEL_CHOICES["asr"][0]
+        elif TASK_MAP[task_dropdown.value] == "ASR":
+            base_model.value = MODEL_CHOICES["ASR"][0]
         else:
             base_model.value = "Enter base model..."
 

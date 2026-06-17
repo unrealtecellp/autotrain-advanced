@@ -107,14 +107,23 @@ PARAMS["extractive-qa"] = {
     "max_doc_stride": 128,
 }
 
-PARAMS["asr"] = {
+PARAMS["ASR"] = {
     "mixed_precision": "fp16",
     "log": "tensorboard",
-    "gradient_accumulation": 1,
-    "epochs": 3,
-    "max_seq_length": 16000,
+    "max_duration": 30.0,
+    "sampling_rate": 16000,
+    "audio_column": "audio",
+    "text_column": "transcription",
+    "max_grad_norm": 1.0,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "early_stopping_patience": 3,
+    "early_stopping_threshold": 0.01,
+    "eval_strategy": "epoch",
+    "save_total_limit": 1,
+    "auto_find_batch_size": False,
+    "logging_steps": -1,
 }
-
 
 DEFAULT_COLUMN_MAPPING = {}
 DEFAULT_COLUMN_MAPPING["llm:sft"] = {"text_column": "text"}
@@ -166,8 +175,15 @@ DEFAULT_COLUMN_MAPPING["tabular:regression"] = {"id_column": "id", "target_colum
 DEFAULT_COLUMN_MAPPING["extractive-qa"] = {
     "text_column": "context",
     "question_column": "question",
-    "answer_column": "answers"}
-DEFAULT_COLUMN_MAPPING["asr"] = {"audio_column": "path", "text_column": "sentence"}
+    "answer_column": "answers",
+}
+
+DEFAULT_COLUMN_MAPPING["ASR"] = {
+    "audio_column": "audio",
+    "text_column": "transcription",
+}
+
+
 VALID_TASKS = [k for k in DEFAULT_COLUMN_MAPPING.keys()]
 
 

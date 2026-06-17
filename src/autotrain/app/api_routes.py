@@ -9,7 +9,7 @@ from pydantic import BaseModel, create_model, model_validator
 
 from autotrain import __version__, logger
 from autotrain.app.params import HIDDEN_PARAMS, PARAMS, AppParams
-from autotrain.app.utils import token_verification
+from autotrain.app.utils import token_verification, get_user_and_orgs
 from autotrain.project import AutoTrainProject
 from autotrain.trainers.clm.params import LLMTrainingParams
 from autotrain.trainers.extractive_question_answering.params import ExtractiveQuestionAnsweringParams
@@ -23,11 +23,11 @@ from autotrain.trainers.text_classification.params import TextClassificationPara
 from autotrain.trainers.text_regression.params import TextRegressionParams
 from autotrain.trainers.token_classification.params import TokenClassificationParams
 from autotrain.trainers.vlm.params import VLMTrainingParams
-from autotrain.trainers.asr.params import ASRParams
+from autotrain.trainers.automatic_speech_recognition.params import AutomaticSpeechRecognitionParams
 
 
 FIELDS_TO_EXCLUDE = HIDDEN_PARAMS + ["push_to_hub"]
-
+_VERIFIED_API_TOKEN = None
 
 def create_api_base_model(base_class, class_name):
     """
@@ -113,8 +113,9 @@ ExtractiveQuestionAnsweringParamsAPI = create_api_base_model(
     ExtractiveQuestionAnsweringParams, "ExtractiveQuestionAnsweringParamsAPI"
 )
 ObjectDetectionParamsAPI = create_api_base_model(ObjectDetectionParams, "ObjectDetectionParamsAPI")
-ASRParamsAPI = create_api_base_model(ASRParams, "ASRParamsAPI")
-
+AutomaticSpeechRecognitionParamsAPI = create_api_base_model(
+    AutomaticSpeechRecognitionParams, "AutomaticSpeechRecognitionParamsAPI"
+)
 
 class LLMSFTColumnMapping(BaseModel):
     text_column: str
@@ -224,13 +225,13 @@ class ExtractiveQuestionAnsweringColumnMapping(BaseModel):
 class ObjectDetectionColumnMapping(BaseModel):
     image_column: str
     objects_column: str
-
-
-class ASRColumnMapping(BaseModel):
+    
+    
+class AutomaticSpeechRecognitionColumnMapping(BaseModel):
     audio_column: str
     text_column: str
-
-
+    
+    
 class APICreateProjectModel(BaseModel):
     """
     APICreateProjectModel is a Pydantic model that defines the schema for creating a project.
@@ -282,7 +283,7 @@ class APICreateProjectModel(BaseModel):
         "vlm:vqa",
         "extractive-question-answering",
         "image-object-detection",
-        "asr",
+        "ASR",
     ]
     base_model: str
     hardware: Literal[
@@ -300,7 +301,7 @@ class APICreateProjectModel(BaseModel):
         "spaces-l40sx8",
         "spaces-a10g-largex2",
         "spaces-a10g-largex4",
-        "local",
+        # "local",
     ]
     params: Union[
         LLMSFTTrainingParamsAPI,
@@ -320,7 +321,7 @@ class APICreateProjectModel(BaseModel):
         VLMTrainingParamsAPI,
         ExtractiveQuestionAnsweringParamsAPI,
         ObjectDetectionParamsAPI,
-        ASRParamsAPI,
+        AutomaticSpeechRecognitionParamsAPI,
     ]
     username: str
     column_mapping: Optional[
@@ -346,7 +347,7 @@ class APICreateProjectModel(BaseModel):
             VLMColumnMapping,
             ExtractiveQuestionAnsweringColumnMapping,
             ObjectDetectionColumnMapping,
-            ASRColumnMapping,
+            AutomaticSpeechRecognitionColumnMapping,
         ]
     ] = None
     hub_dataset: str
@@ -544,15 +545,16 @@ class APICreateProjectModel(BaseModel):
             if not values.get("column_mapping").get("objects_column"):
                 raise ValueError("objects_column is required for image-object-detection")
             values["column_mapping"] = ObjectDetectionColumnMapping(**values["column_mapping"])
-        elif values.get("task") == "asr":
+        elif values.get("task") == "ASR":
             if not values.get("column_mapping"):
-                raise ValueError("column_mapping is required for asr")
-            if not values.get("column_mapping").get("audio_column"):
-                raise ValueError("audio_column is required for asr")
+                raise ValueError("column_mapping is required for ASR")
             if not values.get("column_mapping").get("text_column"):
-                raise ValueError("text_column is required for asr")
-            values["column_mapping"] = ASRColumnMapping(**values["column_mapping"])
+                raise ValueError("text_column is required for ASR")
+            if not values.get("column_mapping").get("audio_column"):
+                raise ValueError("audio_column is required for ASR")
+            values["column_mapping"] = AutomaticSpeechRecognitionColumnMapping(**values["column_mapping"])
         return values
+
 
     @model_validator(mode="before")
     @classmethod
@@ -591,8 +593,8 @@ class APICreateProjectModel(BaseModel):
             values["params"] = ExtractiveQuestionAnsweringParamsAPI(**values["params"])
         elif values.get("task") == "image-object-detection":
             values["params"] = ObjectDetectionParamsAPI(**values["params"])
-        elif values.get("task") == "asr":
-            values["params"] = ASRParamsAPI(**values["params"])
+        elif values.get("task") == "ASR":
+            values["params"] = AutomaticSpeechRecognitionParamsAPI(**values["params"])
         return values
 
 
@@ -616,13 +618,18 @@ def api_auth(request: Request):
     Raises:
         HTTPException: If the token is invalid, expired, or missing.
     """
+    global _VERIFIED_API_TOKEN
     authorization = request.headers.get("Authorization")
     if authorization:
         schema, _, token = authorization.partition(" ")
         if schema.lower() == "bearer":
             token = token.strip()
+            if _VERIFIED_API_TOKEN == token:
+                return token
             try:
-                _ = token_verification(token=token)
+                # Use cached get_user_and_orgs instead of direct token_verification
+                _ = get_user_and_orgs(user_token=token)
+                _VERIFIED_API_TOKEN = token
                 return token
             except Exception as e:
                 logger.error(f"Failed to verify token: {e}")

@@ -24,18 +24,23 @@ from autotrain.dataset import (
     AutoTrainObjectDetectionDataset,
     AutoTrainVLMDataset,
     AutoTrainASRDataset,
+    
 )
 from autotrain.help import get_app_help
 from autotrain.project import AutoTrainProject
+from autotrain.app.life_app_utils import convert_life_app_json_to_local_dataset
 
+os.environ["HF_TOKEN"] = str("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")
 
 logger.info("Starting AutoTrain...")
 HF_TOKEN = os.environ.get("HF_TOKEN", None)
+logger.info(HF_TOKEN)
 IS_RUNNING_IN_SPACE = "SPACE_ID" in os.environ
 ENABLE_NGC = int(os.environ.get("ENABLE_NGC", 0))
 ENABLE_NVCF = int(os.environ.get("ENABLE_NVCF", 0))
 AUTOTRAIN_LOCAL = int(os.environ.get("AUTOTRAIN_LOCAL", 1))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+logger.info(BASE_DIR)
 DB = AutoTrainDB("autotrain.db")
 MODEL_CHOICE = fetch_models()
 
@@ -289,78 +294,41 @@ UI_PARAMS = {
         "label": "Distributed backend",
         "options": ["ddp", "deepspeed"],
     },
-    "sampling_rate": {
-        "type": "number",
-        "label": "Sampling Rate",
-    },
-    "warmup_steps": {
-        "type": "number",
-        "label": "Warmup Steps",
-    },
-    "max_steps": {
-        "type": "number",
-        "label": "Max Steps",
-    },
-    "per_device_train_batch_size": {
-        "type": "number",
-        "label": "Per Device Train Batch Size",
-    },
-    "per_device_eval_batch_size": {
-        "type": "number",
-        "label": "Per Device Eval Batch Size",
-    },
-    "save_steps": {
-        "type": "number",
-        "label": "Save Steps",
-    },
-    "eval_steps": {
-        "type": "number",
-        "label": "Evaluation Steps",
-    },
-    "load_best_model_at_end": {
-        "type": "dropdown",
-        "label": "Load Best Model at End",
-        "options": [True, False],
-    },
-    "metric_for_best_model": {
-        "type": "dropdown",
-        "label": "Metric for Best Model",
-        "options": ["wer"],  # Add more metrics if needed (e.g., "cer")
-    },
-    "greater_is_better": {
-        "type": "dropdown",
-        "label": "Greater is Better",
-        "options": [True, False],
-    },
-    "group_by_length": {
-        "type": "dropdown",
-        "label": "Group by Length",
-        "options": [True, False],
-    },
-    "fp16": {
-        "type": "dropdown",
-        "label": "FP16",
-        "options": [True, False],
-    },
-    "gradient_checkpointing": {
-        "type": "dropdown",
-        "label": "Gradient Checkpointing",
-        "options": [True, False],
-    },
     "audio_column": {
         "type": "string",
-        "label": "Audio Column",
-        "default": "path",
+        "label": "Audio column",
     },
     "text_column": {
         "type": "string",
-        "label": "Text Column",
-        "default": "sentence",
+        "label": "Transcription column",
+    },
+    "max_duration": {
+        "type": "number",
+        "label": "Max audio duration (seconds)",
     },
     "sampling_rate": {
         "type": "number",
-        "label": "Sampling Rate",
-        "default": 16000,
+        "label": "Sampling rate (Hz)",
+    },
+    "max_target_length": {
+        "type": "number",
+        "label": "Max target length",
+    },
+    "max_source_length": {
+        "type": "number",
+        "label": "Max source length",
+    },
+    "max_target_length": {
+        "type": "number",
+        "label": "Max target length",
+    },
+    "max_source_length": {
+        "type": "number",
+        "label": "Max source length",
+    },
+    "max_target_length": {
+        "type": "number",
+        "label": "Max target length",
     },
 }
 
@@ -411,7 +379,8 @@ def user_authentication(request: Request):
     # if "oauth_info" in request.session:
     if HF_TOKEN is not None:
         try:
-            _ = token_verification(token=os.environ.get("HF_TOKEN"))
+            # Use cached get_user_and_orgs instead of direct token_verification
+            _ = get_user_and_orgs(user_token=HF_TOKEN)
             return HF_TOKEN
         except Exception as e:
             logger.error(f"Failed to verify token: {e}")
@@ -425,7 +394,8 @@ def user_authentication(request: Request):
 
     if IS_RUNNING_IN_SPACE and "oauth_info" in request.session:
         try:
-            _ = token_verification(token=request.session["oauth_info"]["access_token"])
+            # Use cached get_user_and_orgs instead of direct token_verification
+            _ = get_user_and_orgs(user_token=request.session["oauth_info"]["access_token"])
             return request.session["oauth_info"]["access_token"]
         except Exception as e:
             request.session.pop("oauth_info", None)
@@ -533,16 +503,12 @@ async def fetch_model_choices(
         hub_models = MODEL_CHOICE["text-classification"]
     elif task.startswith("llm"):
         hub_models = MODEL_CHOICE["llm"]
-    # elif task in ["asr", "automatic-speech-recognition"]:
-    #     hub_models = MODEL_CHOICE["asr"]
     elif task.startswith("st:"):
         hub_models = MODEL_CHOICE["sentence-transformers"]
     elif task == "image-classification":
         hub_models = MODEL_CHOICE["image-classification"]
     elif task == "seq2seq":
         hub_models = MODEL_CHOICE["seq2seq"]
-    elif task == "speech-recognition":
-        hub_models = MODEL_CHOICE["speech-recognition"]
     elif task == "tabular:classification":
         hub_models = MODEL_CHOICE["tabular-classification"]
     elif task == "tabular:regression":
@@ -559,6 +525,8 @@ async def fetch_model_choices(
         hub_models = MODEL_CHOICE["vlm"]
     elif task == "extractive-qa":
         hub_models = MODEL_CHOICE["extractive-qa"]
+    elif task == "ASR":
+        hub_models = MODEL_CHOICE["ASR"]
     else:
         raise NotImplementedError
 
@@ -582,6 +550,10 @@ async def handle_form(
     train_split: str = Form(""),
     valid_split: str = Form(""),
     token: str = Depends(user_authentication),
+    data_source: str = Form(None),
+    selected_project: str = Form(None),
+    selected_script: str = Form(None),
+    dataset_file: str = Form(None),
 ):
     """
     Handle form submission for creating and managing AutoTrain projects.
@@ -600,6 +572,10 @@ async def handle_form(
         train_split (str): The training split identifier.
         valid_split (str): The validation split identifier.
         token (str): The authentication token.
+        data_source (str): The data source type (e.g., "local", "hub", "life_app").
+        selected_project (str): The selected project from LiFE app.
+        selected_script (str): The selected script from LiFE app.
+        dataset_file (str): The dataset file identifier.
 
     Returns:
         dict: A dictionary containing the success status and monitor URL.
@@ -607,6 +583,7 @@ async def handle_form(
     Raises:
         HTTPException: If there are conflicts or validation errors in the form submission.
     """
+    logger.info(f"Form data received: data_source={data_source}, task={task}, life_app_project={selected_project}, life_app_script={selected_script}, dataset_file={dataset_file}")
     train_split = train_split.strip()
     if len(train_split) == 0:
         train_split = None
@@ -628,6 +605,77 @@ async def handle_form(
             status_code=409,
             detail=f"Project {project_name} already exists. Please choose a different name.",
         )
+
+    if data_source == "life_app":
+        if task != "ASR":
+            raise HTTPException(
+                status_code=400,
+                detail="LiFE app datasets can only be used with Automatic Speech Recognition tasks"
+            )
+        if not selected_project or not selected_script:
+            raise HTTPException(
+                status_code=400,
+                detail="Please select both a project and a script from LiFE app"
+            )
+        dataset_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "datasets", "dataset.json")
+        logger.info(f"Checking LiFE App dataset path: {dataset_path}, Exists: {os.path.exists(dataset_path)}")
+        if not os.path.exists(dataset_path):
+            raise HTTPException(
+                status_code=400,
+                detail="LiFE app dataset file not found"
+            )
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            dataset_json = json.load(f)
+        logger.info("Calling convert_life_app_json_to_local_dataset...")
+        temp_dir, csv_path = convert_life_app_json_to_local_dataset(dataset_json)
+        logger.info(f"LiFE App conversion output: temp_dir={temp_dir}, csv_path={csv_path}")
+        logger.info(f"Loading LiFE App dataset from: {csv_path}")
+        # Use existing local dataset logic for ASR
+        dset = AutoTrainASRDataset(
+            train_data=temp_dir,
+            token=token,
+            project_name=project_name,
+            username=autotrain_user,
+            valid_data=None,
+            percent_valid=0.2,
+            local=True,
+        )
+        data_path = dset.prepare()
+        params = json.loads(params) if not isinstance(params, dict) else params
+        params["data_path"] = data_path
+        params["audio_column"] = "audio"
+        params["text_column"] = "transcription"
+        params["life_app_project"] = selected_project
+        params["life_app_script"] = selected_script
+        params["using_hub_dataset"] = False
+        column_mapping = {"audio": "audio", "transcription": "transcription"}
+        app_params = AppParams(
+            job_params_json=json.dumps(params),
+            token=token,
+            project_name=project_name,
+            username=autotrain_user,
+            task=task,
+            data_path=data_path,
+            base_model=base_model,
+            column_mapping=column_mapping,
+            using_hub_dataset=False,
+            train_split=None,
+            valid_split=None,
+        )
+        params = app_params.munge()
+        project = AutoTrainProject(params=params, backend=hardware)
+        job_id = project.create()
+        monitor_url = ""
+        if hardware == "local-ui":
+            DB.add_job(job_id)
+            monitor_url = "Monitor your job locally / in logs"
+        elif hardware.startswith("ep-"):
+            monitor_url = f"https://ui.endpoints.huggingface.co/{autotrain_user}/endpoints/{job_id}"
+        elif hardware.startswith("spaces-"):
+            monitor_url = f"https://hf.co/spaces/{job_id}"
+        else:
+            monitor_url = f"Success! Monitor your job in logs. Job ID: {job_id}"
+        return {"success": "true", "monitor_url": monitor_url}
 
     params = json.loads(params)
     # convert "null" to None
@@ -666,6 +714,7 @@ async def handle_form(
                 percent_valid=None,  # TODO: add to UI
                 local=hardware.lower() == "local-ui",
             )
+            
         elif task == "image-regression":
             dset = AutoTrainImageRegressionDataset(
                 train_data=training_files[0],
@@ -674,6 +723,16 @@ async def handle_form(
                 username=autotrain_user,
                 valid_data=validation_files[0] if validation_files else None,
                 percent_valid=None,  # TODO: add to UI
+                local=hardware.lower() == "local-ui",
+            )
+        elif task == "ASR":
+            dset = AutoTrainASRDataset(
+                train_data=training_files[0],
+                token=token,
+                project_name=project_name,
+                username=autotrain_user,
+                valid_data=validation_files[0] if validation_files else None,
+                percent_valid=None,
                 local=hardware.lower() == "local-ui",
             )
         elif task == "image-object-detection":
@@ -686,18 +745,6 @@ async def handle_form(
                 percent_valid=None,  # TODO: add to UI
                 local=hardware.lower() == "local-ui",
             )
-
-        elif task in "asr":
-            dset = AutoTrainASRDataset(
-                train_data=training_files[0],
-                token=token,
-                project_name=project_name,
-                username=autotrain_user,
-                valid_data=validation_files[0] if validation_files else None,
-                percent_valid=None,  # TODO: add to UI
-                local=hardware.lower() == "local-ui",
-            )
-
         elif task.startswith("vlm:"):
             dset = AutoTrainVLMDataset(
                 train_data=training_files[0],
@@ -739,10 +786,6 @@ async def handle_form(
                     raise NotImplementedError
             elif task == "token-classification":
                 dset_task = "text_token_classification"
-            elif task == "speech-recognition":
-                dset_task = "speech_recognition"
-            # elif task == "asr":
-            #     dset_task = "speech_recognition"
             elif task == "extractive-qa":
                 dset_task = "text_extractive_question_answering"
             else:
@@ -767,6 +810,7 @@ async def handle_form(
         data_path = dset.prepare()
     else:
         data_path = hub_dataset
+
     app_params = AppParams(
         job_params_json=json.dumps(params),
         token=token,
@@ -888,3 +932,123 @@ async def stop_training(authenticated: bool = Depends(user_authentication)):
                 logger.info(f"Process {_pid} is already completed. Skipping...")
         return {"success": True}
     return {"success": False}
+
+@ui_router.get("/life_app_projects", response_class=JSONResponse)
+async def get_life_app_projects(authenticated: bool = Depends(user_authentication)):
+    """
+    Returns the list of projects from the local JSON file for LiFE App integration.
+    """
+    project_list_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "configs", "projectList.json")
+    if not os.path.exists(project_list_path):
+        return JSONResponse(content={"projects": []})
+    with open(project_list_path, "r", encoding="utf-8") as f:
+        projects = json.load(f)
+    return {"projects": projects}
+
+@ui_router.get("/life_app_scripts", response_class=JSONResponse)
+async def get_life_app_scripts(authenticated: bool = Depends(user_authentication)):
+    """
+    Returns the list of scripts from the local JSON file for LiFE App integration.
+    """
+    script_list_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "configs", "scriptList.json")
+    if not os.path.exists(script_list_path):
+        return JSONResponse(content={"scripts": []})
+    with open(script_list_path, "r", encoding="utf-8") as f:
+        scripts = json.load(f)
+    return {"scripts": scripts}
+
+@ui_router.get("/life_app_dataset", response_class=JSONResponse)
+async def get_life_app_dataset(authenticated: bool = Depends(user_authentication)):
+    """
+    Returns the dataset from the local JSON file for LiFE App integration.
+    """
+    dataset_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "datasets", "dataset.json")
+    if not os.path.exists(dataset_path):
+        return JSONResponse(content={"dataset": []})
+    with open(dataset_path, "r", encoding="utf-8") as f:
+        dataset = json.load(f)
+    return {"dataset": dataset}
+
+
+
+@ui_router.post("/project_selected", response_class=JSONResponse)
+async def handle_project_selection(request: Request, authenticated: bool = Depends(user_authentication)):
+    """
+    Handle project selection and return corresponding scripts based on project-script mapping.
+    """
+    try:
+        
+        data = await request.json()
+        selected_projects = data.get('projects', [])
+        
+        
+        logger.info(f"Projects selected: {selected_projects}")
+        
+        
+        mapping_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "configs", "project_script_mapping.json")
+        if not os.path.exists(mapping_path):
+            logger.error("Project-script mapping file not found")
+            return JSONResponse(content={"scripts": []})
+            
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            project_script_mapping = json.load(f)
+        
+        
+        available_scripts = set()
+        for project in selected_projects:
+            if project in project_script_mapping:
+                available_scripts.update(project_script_mapping[project])
+        
+        
+        scripts = list(available_scripts)
+        
+        
+        logger.info(f"Available scripts for projects {selected_projects}: {scripts}")
+        
+       
+        return JSONResponse(content={
+            "status": "success",
+            "projects": selected_projects,
+            "scripts": scripts
+        })
+    except Exception as e:
+        logger.error(f"Error in project selection: {str(e)}")
+        return JSONResponse(
+            content={"error": str(e)}, 
+            status_code=500
+        )
+
+@ui_router.post("/script_selected", response_class=JSONResponse)
+async def handle_script_selection(request: Request, authenticated: bool = Depends(user_authentication)):
+    """
+    Handle script selection and return corresponding datasets based on script-dataset mapping.
+    """
+    try:
+        data = await request.json()
+        selected_script = data.get('script', '')
+        logger.info(f"Script selected (received from frontend): {selected_script}")
+        print(f"[BACKEND] Script selected (received from frontend): {selected_script}")
+
+        mapping_path = os.path.join(BASE_DIR, "..", "..", "..", "life_app_integration", "configs", "script_dataset_mapping.json")
+        if not os.path.exists(mapping_path):
+            logger.error("Script-dataset mapping file not found")
+            return JSONResponse(content={"datasets": []})
+
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            script_dataset_mapping = json.load(f)
+
+        datasets = script_dataset_mapping.get(selected_script, [])
+        logger.info(f"Datasets fetched for script {selected_script}: {datasets}")
+        print(f"[BACKEND] Datasets fetched for script {selected_script}: {datasets}")
+
+        return JSONResponse(content={
+            "status": "success",
+            "script": selected_script,
+            "datasets": datasets
+        })
+    except Exception as e:
+        logger.error(f"Error in script selection: {str(e)}")
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=500
+        )

@@ -58,7 +58,7 @@ def remove_global_step(directory):
         for name in dirs:
             if name.startswith("global_step"):
                 folder_path = os.path.join(root, name)
-                print(f"Removing folder: {folder_path}")
+                logger.info(f"Removing folder: {folder_path}")
                 shutil.rmtree(folder_path)
 
 
@@ -72,7 +72,11 @@ def remove_autotrain_data(config):
     Raises:
         OSError: If the removal of the directory fails.
     """
-    os.system(f"rm -rf {config.project_name}/autotrain-data")
+    # Use shutil.rmtree for cross-platform compatibility
+    import shutil
+    autotrain_data_path = f"{config.project_name}/autotrain-data"
+    if os.path.exists(autotrain_data_path):
+        shutil.rmtree(autotrain_data_path)
     remove_global_step(config.project_name)
 
 
@@ -241,13 +245,16 @@ class AutoTrainParams(BaseModel):
 
     def save(self, output_dir):
         """
-        Save parameters to a json file.
+        Save parameters to a json file, always removing the 'token' key before writing.
         """
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, "training_params.json")
+        data = self.model_dump()
+        if "token" in data:
+            del data["token"]
         # save formatted json
         with open(path, "w", encoding="utf-8") as f:
-            f.write(self.model_dump_json(indent=4))
+            f.write(json.dumps(data, indent=4))
 
     def __str__(self):
         """
@@ -363,8 +370,9 @@ class LossLoggingCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
-        if state.is_local_process_zero:
-            logger.info(logs)
+        if state.is_local_process_zero and logs:
+            log_str = " | ".join(f"{k}: {v}" for k, v in logs.items())
+            logger.info(log_str)
 
 
 class TrainStartCallback(TrainerCallback):

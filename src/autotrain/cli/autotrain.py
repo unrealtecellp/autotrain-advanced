@@ -16,11 +16,14 @@ from autotrain.cli.run_tabular import RunAutoTrainTabularCommand
 from autotrain.cli.run_text_classification import RunAutoTrainTextClassificationCommand
 from autotrain.cli.run_text_regression import RunAutoTrainTextRegressionCommand
 from autotrain.cli.run_token_classification import RunAutoTrainTokenClassificationCommand
+from autotrain.cli.run_automatic_speech_recognition import RunAutoTrainAutomaticSpeechRecognitionCommand
 from autotrain.cli.run_tools import RunAutoTrainToolsCommand
 from autotrain.parser import AutoTrainConfigParser
-from autotrain.cli.run_asr import RunAutoTrainASRCommand
+import os
 
-
+os.environ["HF_TOKEN"] = str("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")
+os.environ["NGROK_AUTH_TOKEN"] = str("2z5RgSWWnmJOtgiLidpnS8Ta3Ca_6WVpgBphSs6VcafuBNUVW")
+os.environ["AUTOTRAIN_LOCAL"] = "1"
 
 def main():
     parser = argparse.ArgumentParser(
@@ -46,10 +49,10 @@ def main():
     RunAutoTrainToolsCommand.register_subcommand(commands_parser)
     RunAutoTrainTextRegressionCommand.register_subcommand(commands_parser)
     RunAutoTrainObjectDetectionCommand.register_subcommand(commands_parser)
-    RunAutoTrainASRCommand.register_subcommand(commands_parser)
     RunAutoTrainSentenceTransformersCommand.register_subcommand(commands_parser)
     RunAutoTrainImageRegressionCommand.register_subcommand(commands_parser)
     RunAutoTrainExtractiveQACommand.register_subcommand(commands_parser)
+    RunAutoTrainAutomaticSpeechRecognitionCommand.register_subcommand(commands_parser)
 
     args = parser.parse_args()
 

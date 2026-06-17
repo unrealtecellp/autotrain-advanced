@@ -15,8 +15,8 @@ from autotrain.trainers.text_classification.params import TextClassificationPara
 from autotrain.trainers.text_regression.params import TextRegressionParams
 from autotrain.trainers.token_classification.params import TokenClassificationParams
 from autotrain.trainers.vlm.params import VLMTrainingParams
-# from autotrain.trainers.asr.params import ASRParams
-from autotrain.trainers.asr.params import WhisperTrainingParams
+from autotrain.trainers.automatic_speech_recognition.params import AutomaticSpeechRecognitionParams
+
 
 AVAILABLE_HARDWARE = {
     # hugging face spaces
@@ -72,7 +72,7 @@ class BaseBackend:
                       GenericParams, TabularParams, Seq2SeqParams,
                       TokenClassificationParams, TextRegressionParams, ObjectDetectionParams,
                       SentenceTransformersParams, ImageRegressionParams, VLMTrainingParams,
-                      ExtractiveQuestionAnsweringParams, ASRParams]): Training parameters.
+                      ExtractiveQuestionAnsweringParams, AutomaticSpeechRecognitionParams]): Training parameters.
         backend (str): Backend type.
 
     Methods:
@@ -94,9 +94,7 @@ class BaseBackend:
         ImageRegressionParams,
         VLMTrainingParams,
         ExtractiveQuestionAnsweringParams,
-        # ASRParams,
-        WhisperTrainingParams,
-        
+        AutomaticSpeechRecognitionParams,
     ]
     backend: str
 
@@ -143,10 +141,8 @@ class BaseBackend:
             self.task_id = 31
         elif isinstance(self.params, ExtractiveQuestionAnsweringParams):
             self.task_id = 5
-        elif isinstance(self.params, WhisperTrainingParams):
-            self.task_id = 11
-        # elif isinstance(self.params, ASRParams):
-        #     self.task_id = 11
+        elif isinstance(self.params, AutomaticSpeechRecognitionParams):
+            self.task_id = 32
         else:
             raise NotImplementedError
 

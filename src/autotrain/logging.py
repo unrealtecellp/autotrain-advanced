@@ -14,6 +14,9 @@ except ImportError:
     pass
 
 
+# Singleton guard for logger setup
+_LOGGER_INITIALIZED = False
+
 @dataclass
 class Logger:
     """
@@ -35,6 +38,7 @@ class Logger:
     """
 
     def __post_init__(self):
+        global _LOGGER_INITIALIZED
         self.log_format = (
             "<level>{level: <8}</level> | "
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -42,7 +46,9 @@ class Logger:
             "<level>{message}</level>"
         )
         self.logger = logger
-        self.setup_logger()
+        if not _LOGGER_INITIALIZED:
+            self.setup_logger()
+            _LOGGER_INITIALIZED = True
 
     def _should_log(self, record):
         if not IS_ACCELERATE_AVAILABLE:

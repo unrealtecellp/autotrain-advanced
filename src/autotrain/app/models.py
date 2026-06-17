@@ -236,6 +236,41 @@ def _fetch_token_classification_models():
 
     return hub_models
 
+def _fetch_asr_models():
+    """
+    Fetches and sorts ASR models from the Hugging Face model hub using the official pipeline tag.
+    Returns a sorted list of model identifiers from the Hugging Face model hub.
+    """
+    # Get models sorted by downloads
+    hub_models = list(
+        list_models(
+            pipeline_tag="automatic-speech-recognition",
+            library="transformers",
+            sort="downloads",
+            direction=-1,
+            limit=100,
+            full=False,
+        )
+    )
+    hub_models = get_sorted_models(hub_models)
+
+    # Get trending models (most likes)
+    trending_models = list(
+        list_models(
+            pipeline_tag="automatic-speech-recognition",
+            library="transformers",
+            sort="likes",
+            direction=-1,
+            limit=30,
+            full=False,
+        )
+    )
+    if len(trending_models) > 0:
+        trending_models = get_sorted_models(trending_models)
+        hub_models = [m for m in hub_models if m not in trending_models]
+        hub_models = trending_models + hub_models
+
+    return hub_models
 
 def _fetch_st_models():
     hub_models1 = list(
@@ -333,74 +368,6 @@ def _fetch_vlm_models():
     return hub_models
 
 
-def _fetch_asr_models():
-    """
-    Fetches and sorts ASR models from the Hugging Face model hub.
-
-    This function retrieves models for the task "automatic-speech-recognition"
-    from the Hugging Face model hub, sorts them by the number of downloads,
-    and combines them into a single list. Additionally, it fetches trending models
-    based on the number of likes in the past 7 days, sorts them, and places them
-    at the beginning of the list if they are not already included.
-
-    Returns:
-        list: A sorted list of model identifiers from the Hugging Face model hub.
-    """
-    print("_fetch_asr_models")
-
-    # Fetch models for the task "asr"
-    hub_models1 = list(
-        list_models(
-            task="asr",
-            library="transformers",
-            sort="downloads",
-            direction=-1,
-            limit=100,
-            full=False,
-        )
-    )
-
-    print(hub_models1)
-
-    # Fetch models for the task "automatic-speech-recognition"
-    hub_models2 = list(
-        list_models(
-            task="automatic-speech-recognition",
-            library="transformers",
-            sort="downloads",
-            direction=-1,
-            limit=100,
-            full=False,
-        )
-    )
-
-    print(hub_models2)
-
-    # Combine and sort the models by downloads
-    hub_models = list(hub_models1) + list(hub_models2)
-    hub_models = get_sorted_models(hub_models)
-
-    # Fetch trending models based on the number of likes in the past 7 days
-    trending_models = list(
-        list_models(
-            task="automatic-speech-recognition",
-            library="transformers",
-            sort="likes7d",
-            direction=-1,
-            limit=30,
-            full=False,
-        )
-    )
-
-    if len(trending_models) > 0:
-        trending_models = get_sorted_models(trending_models)
-        # Remove trending models that are already in the hub_models list
-        hub_models = [m for m in hub_models if m not in trending_models]
-        # Place trending models at the beginning of the list
-        hub_models = trending_models + hub_models
-
-    return hub_models
-
 def fetch_models():
     _mc = collections.defaultdict(list)
     _mc["text-classification"] = _fetch_text_classification_models()
@@ -414,7 +381,7 @@ def fetch_models():
     _mc["sentence-transformers"] = _fetch_st_models()
     _mc["vlm"] = _fetch_vlm_models()
     _mc["extractive-qa"] = _fetch_text_classification_models()
-    _mc["asr"] = _fetch_asr_models() 
+    _mc["ASR"] = _fetch_asr_models()
 
     # tabular-classification
     _mc["tabular-classification"] = [

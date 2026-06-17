@@ -4,8 +4,13 @@ import sys
 
 import psutil
 import requests
+import base64
+import pandas as pd
+import tempfile
 
 from autotrain import config, logger
+
+_VERIFIED_USER_INFO = None
 
 def graceful_exit(signum, frame):
     logger.info("SIGTERM received. Performing cleanup...")
@@ -85,12 +90,14 @@ def kill_process_by_pid(pid):
         Exception: If an error occurs while attempting to send the SIGTERM signal.
     """
     try:
-        os.kill(pid, signal.SIGTERM)
-        logger.info(f"Sent SIGTERM to process with PID {pid}")
-    except ProcessLookupError:
+        # Use psutil for cross-platform process termination
+        process = psutil.Process(pid)
+        process.terminate()
+        logger.info(f"Sent termination signal to process with PID {pid}")
+    except psutil.NoSuchProcess:
         logger.error(f"No process found with PID {pid}")
     except Exception as e:
-        logger.error(f"Failed to send SIGTERM to process with PID {pid}: {e}")
+        logger.error(f"Failed to terminate process with PID {pid}: {e}")
 
 
 def token_verification(token):
@@ -164,16 +171,38 @@ def get_user_and_orgs(user_token):
     Raises:
         Exception: If the user token is None or an empty string.
     """
+    global _VERIFIED_USER_INFO
+    if _VERIFIED_USER_INFO is not None:
+        username = _VERIFIED_USER_INFO["name"]
+        orgs = _VERIFIED_USER_INFO["orgs"]
+        return [username] + orgs
+
+    if user_token is None or len(user_token) == 0:
+        raise Exception("Invalid token. Please login with a write token.")
+
+    _VERIFIED_USER_INFO = token_verification(token=user_token)
+    username = _VERIFIED_USER_INFO["name"]
+    orgs = _VERIFIED_USER_INFO["orgs"]
+    return [username] + orgs
+
+
+def get_user_token(user_token):
+    """
+    Retrieve the user token from the provided user_token.
+
+    Args:
+        user_token (str): The token string.
+
+    Returns:
+        str: The user token.
+
+    Raises:
+        Exception: If the user token is None or an empty string.
+    """
     if user_token is None:
         raise Exception("Please login with a write token.")
 
     if user_token is None or len(user_token) == 0:
         raise Exception("Invalid token. Please login with a write token.")
 
-    user_info = token_verification(token=user_token)
-    username = user_info["name"]
-    orgs = user_info["orgs"]
-
-    who_is_training = [username] + orgs
-
-    return who_is_training
+    return user_token

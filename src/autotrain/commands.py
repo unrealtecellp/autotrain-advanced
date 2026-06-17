@@ -1,5 +1,6 @@
 import os
 import shlex
+import sys
 
 import torch
 
@@ -17,8 +18,19 @@ from autotrain.trainers.text_classification.params import TextClassificationPara
 from autotrain.trainers.text_regression.params import TextRegressionParams
 from autotrain.trainers.token_classification.params import TokenClassificationParams
 from autotrain.trainers.vlm.params import VLMTrainingParams
-# from autotrain.trainers.asr.params import ASRParams
-from autotrain.trainers.asr.params import WhisperTrainingParams
+from autotrain.trainers.automatic_speech_recognition.params import AutomaticSpeechRecognitionParams
+
+
+def _get_python_executable():
+    """Get the Python executable path from the current environment."""
+    return sys.executable
+
+
+def _prepend_python_to_command(cmd):
+    """Prepend the Python executable to accelerate commands."""
+    if cmd and cmd[0] == "accelerate":
+        return [_get_python_executable(), "-m", "accelerate.commands.launch"] + cmd[2:]
+    return cmd
 
 
 CPU_COMMAND = [
@@ -116,8 +128,7 @@ def launch_command(params):
             - ImageRegressionParams
             - Seq2SeqParams
             - VLMTrainingParams
-            # - ASRParams
-            - WhisperTrainingParams
+            - AutomaticSpeechRecognitionParams
 
     Returns:
         list: A list of command line arguments to be executed for training.
@@ -359,29 +370,47 @@ def launch_command(params):
                     os.path.join(params.project_name, "training_params.json"),
                 ]
             )
-
-    
-
-    # elif isinstance(params, ASRParams):
-    #     distributed_backend = getattr(params, "distributed_backend", None)
-    #     cmd = get_accelerate_command(num_gpus, params.gradient_accumulation, distributed_backend)
-    #     if num_gpus > 0:
-    #         cmd.append("--mixed_precision")
-    #         if params.mixed_precision == "fp16":
-    #             cmd.append("fp16")
-    #         elif params.mixed_precision == "bf16":
-    #             cmd.append("bf16")
-    #         else:
-    #             cmd.append("no")
-    #     cmd.extend(
-    #         [
-    #             "-m",
-    #             "autotrain.trainers.asr",
-    #             "--training_config",
-    #             os.path.join(params.project_name, "training_params.json"),
-    #         ]
-    #     )
-
+    elif isinstance(params, AutomaticSpeechRecognitionParams):
+        if num_gpus == 0:
+            cmd = [
+                "accelerate",
+                "launch",
+                "--cpu",
+            ]
+        elif num_gpus == 1:
+            cmd = [
+                "accelerate",
+                "launch",
+                "--num_machines",
+                "1",
+                "--num_processes",
+                "1",
+            ]
+        else:
+            cmd = [
+                "accelerate",
+                "launch",
+                "--multi_gpu",
+                "--num_machines",
+                "1",
+                "--num_processes",
+                str(num_gpus),
+            ]
+        if num_gpus > 0:
+            cmd.append("--mixed_precision")
+            if params.mixed_precision == "fp16":
+                cmd.append("fp16")
+            elif params.mixed_precision == "bf16":
+                cmd.append("bf16")
+            else:
+                cmd.append("no")
+        cmd.extend([
+            "-m",
+            "autotrain.trainers.automatic_speech_recognition",
+            "--training_config",
+            os.path.join(params.project_name, "training_params.json"),
+        ])
+        
     elif isinstance(params, Seq2SeqParams):
         if num_gpus == 0:
             logger.warning("No GPU found. Forcing training on CPU. This will be super slow!")
@@ -517,7 +546,6 @@ def launch_command(params):
                     str(params.gradient_accumulation),
                 ]
 
-    
         if num_gpus > 0:
             cmd.append("--mixed_precision")
             if params.mixed_precision == "fp16":
@@ -535,54 +563,20 @@ def launch_command(params):
                 os.path.join(params.project_name, "training_params.json"),
             ]
         )
-    elif isinstance(params, WhisperTrainingParams):
-        cmd = get_accelerate_command(num_gpus, params.gradient_accumulation_steps)
-        if num_gpus > 0:
-            cmd.append("--mixed_precision")
-            if params.mixed_precision == "fp16":
-                cmd.append("fp16")
-            elif params.mixed_precision == "bf16":
-                cmd.append("bf16")
-            else:
-                cmd.append("no")
-
-        cmd.extend(
-            [
-                "-m",
-                "autotrain.trainers.asr",
-                "--training_config",
-                os.path.join(params.project_name, "training_params.json"),
-            ]
-        )
-        return cmd
-    # elif isinstance(params, ASRParams):
-    #     distributed_backend = getattr(params, "distributed_backend", None)
-    #     cmd = get_accelerate_command(num_gpus, params.gradient_accumulation, distributed_backend)
-    #     if num_gpus > 0:
-    #         cmd.append("--mixed_precision")
-    #         if params.mixed_precision == "fp16":
-    #             cmd.append("fp16")
-    #         elif params.mixed_precision == "bf16":
-    #             cmd.append("bf16")
-    #         else:
-    #             cmd.append("no")
-
-    #     cmd.extend(
-    #         [
-    #             "-m",
-    #             "autotrain.trainers.asr",
-    #             "--training_config",
-    #             os.path.join(params.project_name, "training_params.json"),
-    #         ]
-    #     )
-
 
     else:
         raise ValueError("Unsupported params type")
+
+    # ALWAYS prepend Python executable to accelerate commands
+    # This ensures the conda environment's Python is used, not the system Python
+    if cmd and len(cmd) > 0 and cmd[0] == "accelerate":
+        original_cmd = cmd.copy()
+        cmd = _prepend_python_to_command(cmd)
+        logger.info(f"Prepended Python to accelerate command")
+        logger.info(f"Original command: {original_cmd}")
+        logger.info(f"Prepended command: {cmd}")
     
-
-
-
-    logger.info(cmd)
-    logger.info(params)
+    logger.info(f"Final launch command: {cmd}")
+    logger.info(f"Python executable being used: {_get_python_executable()}")
+    logger.info(f"Training params project_name: {params.project_name}")
     return cmd
