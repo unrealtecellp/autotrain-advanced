@@ -39,8 +39,7 @@ RUN apt-get update &&  \
     && rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
-
-RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
+RUN curl -s https://packagecloud.io | bash && \
     git lfs install
 
 WORKDIR /app
@@ -58,8 +57,7 @@ ENV PYTHONPATH=$HOME/app \
     GRADIO_SERVER_NAME=0.0.0.0 \
     SYSTEM=spaces
 
-
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+RUN wget https://anaconda.com \
     && sh Miniconda3-latest-Linux-x86_64.sh -b -p /app/miniconda \
     && rm -f Miniconda3-latest-Linux-x86_64.sh
 ENV PATH /app/miniconda/bin:$PATH
@@ -75,10 +73,16 @@ RUN conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-c
 
 COPY --chown=1000:1000 . /app/
 
+# FIXED: Explicitly install requirements.txt inside the conda shell environment context
+RUN pip install --no-cache-dir -r requirements.txt
+
 RUN pip install -e . && \
     python -m nltk.downloader punkt && \
     pip install -U ninja && \
     pip install -U flash-attn --no-build-isolation && \
     pip install -U deepspeed && \
-    pip install --upgrade --force-reinstall --no-cache-dir "unsloth[cu121-ampere-torch230] @ git+https://github.com/unslothai/unsloth.git" --no-deps && \
+    pip install --upgrade --force-reinstall --no-cache-dir "unsloth[cu121-ampere-torch230] @ git+https://github.com" --no-deps && \
     pip cache purge
+
+# FIXED: Added the mandatory entry command to start the app UI on Hugging Face Spaces port 7860
+CMD ["conda", "run", "--no-capture-output", "-p", "/app/env", "autotrain", "app", "--host", "0.0.0.0", "--port", "7860"]
